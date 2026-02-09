@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Query Flow Diagram</title>
+  <style>
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      margin: 0;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      color: #c4b5fd;
+      margin-bottom: 0.25rem;
+    }
+    p.subtitle {
+      color: #9ca3af;
+      margin-top: 0;
+      margin-bottom: 2rem;
+    }
+    .mermaid {
+      background: #0f0f23;
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 100%;
+      overflow-x: auto;
+      border: 1px solid #2d2d5e;
+    }
+  </style>
+</head>
+<body>
+  <h1>RAG Chatbot &mdash; Query Flow</h1>
+  <p class="subtitle">frontend/script.js &rarr; backend/app.py &rarr; rag_system &rarr; Claude API &rarr; ChromaDB</p>
+
+  <div class="mermaid">
+sequenceDiagram
+    actor User
+    participant FE as Frontend<br/>script.js
+    participant API as FastAPI<br/>app.py
+    participant RAG as RAGSystem<br/>rag_system.py
+    participant SM as SessionManager<br/>session_manager.py
+    participant AI as AIGenerator<br/>ai_generator.py
+    participant Claude as Claude API
+    participant TM as ToolManager<br/>search_tools.py
+    participant VS as VectorStore<br/>vector_store.py
+    participant DB as ChromaDB
+
+    Note over User,FE: 1. User Input
+    User->>FE: Types question + Enter/Click
+    FE->>FE: Disable input, show loading spinner
+    FE->>FE: addMessage(query, 'user')
+
+    Note over FE,API: 2. HTTP Request
+    FE->>+API: POST /api/query<br/>{query, session_id}
+
+    Note over API,SM: 3. Session Handling
+    alt session_id is null
+        API->>SM: create_session()
+        SM-->>API: "session_1"
+    end
+
+    Note over API,RAG: 4. RAG Orchestration
+    API->>+RAG: query(query, session_id)
+    RAG->>RAG: Wrap query in prompt template
+    RAG->>SM: get_conversation_history(session_id)
+    SM-->>RAG: Formatted history string or None
+
+    Note over RAG,Claude: 5. First Claude Call (with tools)
+    RAG->>+AI: generate_response(prompt, history, tools, tool_manager)
+    AI->>AI: Build system prompt + history
+    AI->>AI: Assemble API params<br/>(model, temperature:0, max_tokens:800)
+    AI->>+Claude: messages.create()<br/>with search_course_content tool
+    Claude-->>-AI: Response with stop_reason
+
+    alt stop_reason == "end_turn"
+        Note over AI,Claude: Claude answered directly<br/>(general knowledge)
+        AI-->>RAG: response.content[0].text
+    else stop_reason == "tool_use"
+        Note over AI,TM: 6. Tool Execution
+
+        AI->>+TM: execute_tool("search_course_content",<br/>query, course_name?, lesson_number?)
+        TM->>+VS: search(query, course_name, lesson_number)
+
+        opt course_name provided
+            Note over VS,DB: 6a. Fuzzy Course Resolution
+            VS->>DB: Query course_catalog<br/>(embedding similarity)
+            DB-->>VS: Best matching course title
+        end
+
+        Note over VS,DB: 6b. Semantic Content Search
+        VS->>VS: Build filter<br/>(course_title, lesson_number)
+        VS->>DB: Query course_content<br/>(top 5 nearest chunks)
+        DB-->>VS: documents + metadata + distances
+        VS-->>-TM: SearchResults
+
+        TM->>TM: Format results:<br/>[Course - Lesson N]\ncontent
+        TM->>TM: Store sources in last_sources
+        TM-->>-AI: Formatted results string
+
+        Note over AI,Claude: 7. Second Claude Call (no tools)
+        AI->>AI: Build messages:<br/>user → assistant(tool_use) → user(tool_result)
+        AI->>+Claude: messages.create()<br/>with search results, no tools
+        Claude-->>-AI: Synthesized answer
+        AI-->>-RAG: Final answer text
+    end
+
+    Note over RAG,SM: 8. Post-processing
+    RAG->>TM: get_last_sources()
+    TM-->>RAG: ["Course A - Lesson 2", ...]
+    RAG->>TM: reset_sources()
+    RAG->>SM: add_exchange(session_id,<br/>query, response)
+
+    RAG-->>-API: (answer, sources)
+
+    Note over API,FE: 9. HTTP Response
+    API-->>-FE: JSON {answer, sources, session_id}
+
+    Note over FE,User: 10. Render Response
+    FE->>FE: Remove loading spinner
+    FE->>FE: Store session_id
+    FE->>FE: marked.parse(answer) → HTML
+    FE->>FE: Render collapsible sources
+    FE->>FE: Re-enable input
+    FE-->>User: Displays formatted answer<br/>with source citations
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      sequence: {
+        mirrorActors: false,
+        actorMargin: 40,
+        messageMargin: 30,
+        noteMargin: 10,
+        boxMargin: 10,
+        width: 180,
+        useMaxWidth: false
+      },
+      themeVariables: {
+        noteBkgColor: '#2d2d5e',
+        noteTextColor: '#e0e0e0',
+        noteBorderColor: '#6366f1',
+        actorBkg: '#4f46e5',
+        actorTextColor: '#ffffff',
+        actorBorder: '#6366f1',
+        signalColor: '#c4b5fd',
+        signalTextColor: '#e0e0e0',
+        sequenceNumberColor: '#fff'
+      }
+    });
+  </script>
+</body>
+</html>
