@@ -30,6 +30,9 @@ function setupEventListeners() {
     });
     
     
+    // New chat button
+    document.getElementById('newChatBtn').addEventListener('click', createNewSession);
+
     // Suggested questions
     document.querySelectorAll('.suggested-item').forEach(button => {
         button.addEventListener('click', (e) => {
@@ -125,7 +128,7 @@ function addMessage(content, type, sources = null, isWelcome = false) {
         html += `
             <details class="sources-collapsible">
                 <summary class="sources-header">Sources</summary>
-                <div class="sources-content">${sources.join(', ')}</div>
+                <div class="sources-content">${sources.map(s => `<span class="source-tag">${escapeHtml(s)}</span>`).join('')}</div>
             </details>
         `;
     }
