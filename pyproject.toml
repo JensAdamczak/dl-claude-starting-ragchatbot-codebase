@@ -14,6 +14,15 @@ dependencies = [
     "python-dotenv==1.1.1",
 ]
 
+[dependency-groups]
+dev = [
+    "black>=24.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
 [tool.uv]
 python-preference = "only-system"
 environments = ["sys_platform == 'darwin' and platform_machine == 'x86_64'"]
